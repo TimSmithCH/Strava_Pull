@@ -102,3 +102,8 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+
+# Token files
+client.secret
+# Log files
+StravaLog/
