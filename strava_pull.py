@@ -5,16 +5,19 @@ import stravalib
 from stravaweblib import WebClient, DataFormat
 import pandas as pd
 import datetime
-#from pprint import pprint
-#import requests
+from pprint import pprint
+import requests
 import glob
+
+FORCED = True
+#FORCED = False
 
 # stravalib assumes logging has been configured
 logging.basicConfig(filename='StravaLog/Strava_Pull.log',level=logging.INFO)
 
 # Read all Strava secrets from file, so that they arent in the code!
 OAUTH_TOKEN,EMAIL,PASSWORD = open('client.secret').read().strip().split(',')
-LIMIT = 1000
+LIMIT = 500
 my_cols =['name',
           'start_date_local',
           'type', 
@@ -22,6 +25,7 @@ my_cols =['name',
           'total_elevation_gain',
           'elapsed_time',
           'device_name',
+          'commute',
           'start_latlng']
 types = ['time', 'distance', 'latlng', 'altitude', 'velocity_smooth', 'moving', 'grade_smooth', 'temp']
 
@@ -33,15 +37,15 @@ client = WebClient(access_token=OAUTH_TOKEN, email=EMAIL, password=PASSWORD)
 
 # Retrieve the list of activities from Strava
 print("Retrieve max.",LIMIT," activities")
-#activities = client.get_activities(after="2020-01-01T00:00:00Z",before="2021-01-01T00:00:00Z", limit=LIMIT)
-activities = client.get_activities(after="2018-01-01T00:00:00Z",before="2018-06-01T00:00:00Z", limit=LIMIT)
+#activities = client.get_activities(after="2010-01-01T00:00:00Z", limit=LIMIT)
+activities = client.get_activities(after="2020-01-01T00:00:00Z", limit=LIMIT)
 #activities = client.get_activities(limit=LIMIT)
 
 # Collate the summary data
 summary_data = []
 for activity in activities:
     my_dict = activity.to_dict()
-    summary_data.append([my_dict.get(x) for x in my_cols])
+    summary_data.append([my_dict.get(x) for x in my_cols] + [activity.id])
 
 # Activities contain limited summary data, for complete summary data need to
 # retrieve each activity individually
@@ -53,9 +57,11 @@ for activity in activities:
 #    data.append([my_dict.get(x) for x in my_cols])
 
 # Store the summary data in a file
+my_cols = my_cols + ["activity"]
 df = pd.DataFrame(summary_data, columns=my_cols)
 print("Found ",df.shape[0]," to retrieve")
 print(df.head(10))
+#print(df)
 f = open("StravaLog/strava_activity_log.txt", "w")
 df.to_csv(f, sep=',', index=False, header=True, encoding='utf-8')
 f.close()
@@ -77,19 +83,19 @@ f.close()
 
 # Retrieve the original data files uploaded for each activity from Strava
 # Data format may be ORIGINAL, TCX or GPX
-data_fmt = 'fit'
-#data_fmt = 'gpx'
+data_fmt = 'gpx'
+#data_fmt = 'fit'
 data = []
 for activity in activities:
     # Skip if there are existing files
     fpat = "StravaLog/Activities/{0}.*.{1}".format(activity.id, data_fmt)
 #    print("Searching for {0}".format(fpat))
     matched = glob.glob(fpat)
-    if matched:
+    if matched and not FORCED:
         print("Found {0} so skipping download".format(matched))
     else:
         try:
-            data = client.get_activity_data(activity.id, fmt=DataFormat.ORIGINAL)
+            data = client.get_activity_data(activity.id, fmt=DataFormat.GPX)
             # Save the activity data to disk using the server-provided filename
             fname = "StravaLog/Activities/{0}.{1}".format(activity.id, data.filename)
             print("Downloaded {0}".format(fname))
@@ -99,7 +105,10 @@ for activity in activities:
                         break
                     f.write(chunk)
         except stravalib.exc.Fault as e:
+            fname = "StravaLog/Activities/{0}.error.{1}".format(activity.id, data_fmt)
             print("ERROR trying to download {0} {1}".format(activity.id,activity.name))
+            #print("ERROR trying to download {0}".format(fname))
+            open(fname, 'a').close()
 
 #--- Alternatives ---
 #    url = "https://www.strava.com/activities/%d/export_original" % activity.id
